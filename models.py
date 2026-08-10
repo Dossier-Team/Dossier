@@ -16,7 +16,8 @@ class Company(BaseModel):
     known_aliases: list[str]
     address: str
     created_at: datetime
-    num_violations: int
+    num_distinct_users_violated: int
+    violations: list['Violation']
 
 
 class Call(BaseModel):
