@@ -1,13 +1,15 @@
 from datetime import datetime
 from pydantic import BaseModel
 
+
 class User(BaseModel):
     id: int
     name: str
     email: str
     phone_numer: str
     state: str
-    on_dnc: bool
+    on_dnc_since: datetime | None
+
 
 class Company(BaseModel):
     name: str
