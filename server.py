@@ -13,7 +13,6 @@ load_dotenv()
 app = FastAPI()
 app.include_router(tools_router)
 
-
 elevenlabs = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
 AGENT_ID = os.environ["ELEVENLABS_AGENT_ID"]
 
@@ -32,6 +31,11 @@ async def handle_inbound_call(request: Request):
     )
 
     return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/elevenlabs-webhook")
+async def elevenlabs_webhook(request: Request):
+    return Response(status_code=200)
 
 
 if __name__ == "__main__":
