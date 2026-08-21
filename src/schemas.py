@@ -5,8 +5,8 @@ class ElevenLabsWebhookData(BaseModel):
     agent_id: str
     conversation_id: str
     transcript: list
-    metadata: None
-    analysis: None
+    # metadata: None
+    # analysis: None
 
 
 class ElevenLabsWebhookPayload(BaseModel):
