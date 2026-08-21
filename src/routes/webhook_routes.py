@@ -14,5 +14,5 @@ WEBHOOK_SECRET = os.environ['ELEVENLABS_WEBHOOK_SECRET']
 
 
 @router.post('/elevenlabs/call-complete')
-async def handle_call_complete(request: Request) -> Response:
-    return Response(status_code=200)
+async def receive_post_call_transcription(request: Request) -> Response:
+    pass
