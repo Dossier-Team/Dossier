@@ -25,6 +25,11 @@ async def handle_inbound_call(request: Request) -> Response:
 
 @router.post('/elevenlabs/call-complete')
 async def receive_post_call_webhook(request: Request) -> Response:
+    """
+    Receives post call data from the ElevenLabs agent
+    NOTE: must return a Response with status code 200 if successful otherwise it will be disabled by ElevenLabs
+    """
+
     payload = await request.body()
     signature = request.headers.get('elevenlabs-signature')
 
@@ -40,5 +45,7 @@ async def receive_post_call_webhook(request: Request) -> Response:
     if event.get("type") == "post_call_transcription":
         payload = ElevenLabsWebhookPayload.model_validate(event)
         print(payload.data.transcript)
+
+    # TODO: handle call initiation failure and audio event here
 
     return Response(status_code=200)
