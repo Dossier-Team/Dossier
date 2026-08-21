@@ -1,7 +1,7 @@
 from fastapi import Request, Response, APIRouter
 from elevenlabs.errors import BadRequestError
 
-from src.client import ELEVENLABS_AGENT_ID, elevenlabs, ELEVENLABS_WEBHOOK_SECRET
+from src.clients import ELEVENLABS_AGENT_ID, elevenlabs, ELEVENLABS_WEBHOOK_SECRET
 from src.schemas import ElevenLabsWebhookPayload
 
 router = APIRouter(prefix='/routes')
