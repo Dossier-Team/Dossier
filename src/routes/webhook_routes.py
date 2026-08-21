@@ -1,12 +1,9 @@
-import os
-
-from dotenv import load_dotenv
 from fastapi import Request, Response, APIRouter
-from elevenlabs import ElevenLabs
-from elevenlabs.errors import BadRequestError
 
+from src.client import ELEVENLABS_AGENT_ID, elevenlabs
 
-router = APIRouter(prefix='/agent')
+router = APIRouter(prefix='/routes')
+
 
 @router.post('/twilio/inbound')
 async def handle_inbound_call(request: Request) -> Response:
