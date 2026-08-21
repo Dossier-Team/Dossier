@@ -4,7 +4,7 @@ from elevenlabs.errors import BadRequestError
 from src.clients import ELEVENLABS_AGENT_ID, elevenlabs, ELEVENLABS_WEBHOOK_SECRET
 from src.schemas import ElevenLabsWebhookPayload
 
-router = APIRouter(prefix='/routes')
+router = APIRouter()
 
 
 @router.post('/twilio/inbound')
