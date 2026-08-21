@@ -1,6 +1,7 @@
 from fastapi import Request, Response, APIRouter
+from elevenlabs.errors import BadRequestError
 
-from src.client import ELEVENLABS_AGENT_ID, elevenlabs
+from src.client import ELEVENLABS_AGENT_ID, elevenlabs, ELEVENLABS_WEBHOOK_SECRET
 
 router = APIRouter(prefix='/routes')
 
@@ -23,4 +24,16 @@ async def handle_inbound_call(request: Request) -> Response:
 
 @router.post('/elevenlabs/call-complete')
 async def receive_post_call_transcription(request: Request) -> Response:
-    pass
+    payload = await request.body()
+    signature = request.headers.get('elevenlabs-signature')
+
+    try:
+        event = elevenlabs.webhooks.construct_event(
+            rawBody=payload.decode("utf-8"),
+            sig_header=signature,
+            secret=ELEVENLABS_WEBHOOK_SECRET,
+        )
+    except BadRequestError:
+        return Response(status_code=404)
+
+    return Response(status_code=200)
