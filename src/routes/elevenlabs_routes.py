@@ -2,7 +2,7 @@ from elevenlabs.errors import BadRequestError
 from fastapi import Request, Response, APIRouter, BackgroundTasks
 
 from src.clients import elevenlabs, ELEVENLABS_WEBHOOK_SECRET
-from src.schemas import ElevenLabsWebhookPayload
+from src.schemas.webhooks import ElevenLabsWebhookPayload
 from src.tasks import run_extraction
 
 router = APIRouter()

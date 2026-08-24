@@ -1,7 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 
-from src.extraction_models import CallExtraction
+from src.schemas.extraction import CallExtraction
 from src.llm import get_llm
 
 EXTRACTION_PROMPT = ChatPromptTemplate.from_messages([

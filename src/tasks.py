@@ -1,5 +1,5 @@
 from src.extraction import extract_call_info
-from src.schemas import ElevenLabsWebhookPayload
+from src.schemas.webhooks import ElevenLabsWebhookPayload
 
 
 def run_extraction(payload: ElevenLabsWebhookPayload) -> None:
