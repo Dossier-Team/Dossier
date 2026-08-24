@@ -7,7 +7,7 @@ from src.tasks import run_extraction
 
 router = APIRouter()
 
-@router.post('/elevenlabs/call-complete')
+@router.post("/elevenlabs/call-complete")
 async def receive_post_call_webhook(request: Request, background_tasks: BackgroundTasks) -> Response:
     """
     Receives post call data from the ElevenLabs agent
@@ -15,7 +15,7 @@ async def receive_post_call_webhook(request: Request, background_tasks: Backgrou
     """
 
     body = await request.body()
-    signature = request.headers.get('elevenlabs-signature')
+    signature = request.headers.get("elevenlabs-signature")
 
     try:
         event = elevenlabs.webhooks.construct_event(
