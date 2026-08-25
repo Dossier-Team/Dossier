@@ -1,6 +1,6 @@
 # Dossier Prototype
 
-Someone dials a Twilio number → Twilio hits your server → your server registers
+Someone dials a Twilio number -> Twilio hits your server → your server registers
 the call with ElevenLabs → an ElevenLabs agent picks up and talks.
 
 **This is just to prove calls get answer**
