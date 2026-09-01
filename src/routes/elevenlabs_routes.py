@@ -1,9 +1,9 @@
 from elevenlabs.errors import BadRequestError
 from fastapi import Request, Response, APIRouter, BackgroundTasks
 
-from src.clients import elevenlabs, ELEVENLABS_WEBHOOK_SECRET
+from schemas.extraction import CallExtraction
+from src.clients import elevenlabs, ELEVENLABS_WEBHOOK_SECRET, LLM_MODEL
 from src.schemas.webhooks import ElevenLabsWebhookPayload
-from src.tasks import run_extraction
 
 router = APIRouter()
 
@@ -28,8 +28,29 @@ async def receive_post_call_webhook(request: Request, background_tasks: Backgrou
 
     if event.get("type") == "post_call_transcription":
         payload = ElevenLabsWebhookPayload.model_validate(event)
-        background_tasks.add_task(run_extraction, payload)
+        background_tasks.add_task(run_extraction_on_post_call_transcript, payload)
 
     # TODO: handle call initiation failure and audio event here
 
     return Response(status_code=200)
+
+async def run_extraction_on_post_call_transcript(payload: ElevenLabsWebhookPayload) -> CallExtraction:
+    transcript_text = payload.data.transcript
+
+    structured_llm = LLM_MODEL.with_structured_output(CallExtraction)
+
+    extraction =  await structured_llm.ainvoke(
+        [
+            (
+                "system",
+                "You are analyzing a transcript of a phone call between an AI agent "
+                "posing as a potential scam victim and a suspected scammer. Extract "
+                "every signal defined in the schema. Leave a field as None/[] when "
+                "the transcript doesn't support it — never fabricate.",
+            ),
+            ("human", f"Transcript:\n\n{transcript_text}"),
+        ]
+    )
+
+    print(extraction)
+    return extraction
