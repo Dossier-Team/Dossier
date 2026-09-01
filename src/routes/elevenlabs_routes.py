@@ -1,7 +1,7 @@
 from elevenlabs.errors import BadRequestError
 from fastapi import Request, Response, APIRouter, BackgroundTasks
 
-from schemas.extraction import CallExtraction
+from src.schemas.extraction import CallExtraction
 from src.clients import elevenlabs, ELEVENLABS_WEBHOOK_SECRET, LLM_MODEL
 from src.schemas.webhooks import ElevenLabsWebhookPayload
 
