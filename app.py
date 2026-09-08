@@ -1,10 +1,8 @@
 from fastapi import FastAPI
 
-from src.routes.elevenlabs_routes import router as elevenlabs_router
 from src.routes.twilio_routes import router as twilio_router
 
 app = FastAPI()
-app.include_router(elevenlabs_router)
 app.include_router(twilio_router)
 
 @app.get("/")
