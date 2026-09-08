@@ -1,9 +1,9 @@
-from dataclasses import dataclass, field
+from dataclasses import field
 from datetime import datetime, timezone
+from pydantic import BaseModel
 
 
-@dataclass
-class CallSession:
+class CallSession(BaseModel):
     """Per-call state shared by the bridge, the route, and the extraction step.
 
     Everything here is populated as the call progresses: the Twilio `start`
