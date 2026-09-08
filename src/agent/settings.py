@@ -1,39 +1,32 @@
-"""Deepgram Voice Agent configuration.
-
-Built with the SDK's typed constructors rather than `model_validate` on a raw
-dict, so a schema mistake surfaces here at import instead of on the first call.
-"""
-
 from deepgram.agent.v1 import (
     AgentV1Settings,
     AgentV1SettingsAgent,
     AgentV1SettingsAgentListen,
     AgentV1SettingsAgentListenProvider_V2,
-    AgentV1SettingsAgentSpeakEndpoint,
-    AgentV1SettingsAgentSpeakEndpointProvider_Deepgram,
     AgentV1SettingsAudio,
     AgentV1SettingsAudioInput,
     AgentV1SettingsAudioOutput,
 )
-from deepgram.types import ThinkSettingsV1
+from deepgram.types import (
+    ThinkSettingsV1,
+    ThinkSettingsV1Provider_Google,
+    SpeakSettingsV1,
+    SpeakSettingsV1Provider_Deepgram,
+)
 
 from src.agent.prompts import GREETING, PROMPT
 from src.agent.session import CallSession
 
-# Twilio Media Streams speak and listen mulaw at 8 kHz in both directions;
-# anything else here means resampling in the bridge.
 TWILIO_ENCODING = "mulaw"
 TWILIO_SAMPLE_RATE = 8000
 
 STT_MODEL = "flux-general-en"
-# Flux (speak v2) is not in the SDK's voice list and is unconfirmed for
-# mulaw/8000; Aura 2 on v1 definitely supports it. See the migration plan's
-# open items before switching this to a flux-* voice.
 TTS_MODEL = "aura-2-thalia-en"
-TTS_VERSION = "v1"
-# No API key is sent for the LLM, so Deepgram bills its managed model. This is
-# a third LLM in the stack, separate from LLM_MODEL used for extraction.
-THINK_PROVIDER = {"type": "open_ai", "model": "gpt-4o-mini"}
+THINK_MODEL = "gemini-2.5-flash"
+
+LISTEN_PROVIDER = AgentV1SettingsAgentListenProvider_V2(type="deepgram", model=STT_MODEL)
+SPEAK_PROVIDER = SpeakSettingsV1Provider_Deepgram(type="deepgram", model=TTS_MODEL)
+THINK_PROVIDER = ThinkSettingsV1Provider_Google(type="google", model=THINK_MODEL)
 
 
 def build_agent_settings(session: CallSession) -> AgentV1Settings:
@@ -52,19 +45,9 @@ def build_agent_settings(session: CallSession) -> AgentV1Settings:
             ),
         ),
         agent=AgentV1SettingsAgent(
-            listen=AgentV1SettingsAgentListen(
-                provider=AgentV1SettingsAgentListenProvider_V2(
-                    type="deepgram",
-                    model=STT_MODEL,
-                ),
-            ),
+            listen=AgentV1SettingsAgentListen(provider=LISTEN_PROVIDER),
             think=ThinkSettingsV1(provider=THINK_PROVIDER, prompt=PROMPT),
-            speak=AgentV1SettingsAgentSpeakEndpoint(
-                provider=AgentV1SettingsAgentSpeakEndpointProvider_Deepgram(
-                    version=TTS_VERSION,
-                    model=TTS_MODEL,
-                ),
-            ),
+            speak=SpeakSettingsV1(provider=SPEAK_PROVIDER),
             greeting=GREETING,
         ),
     )
