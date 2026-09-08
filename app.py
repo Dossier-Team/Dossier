@@ -7,6 +7,10 @@ app = FastAPI()
 app.include_router(elevenlabs_router)
 app.include_router(twilio_router)
 
+@app.get("/")
+async def health():
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     import uvicorn
 
