@@ -1,6 +1,5 @@
-from dataclasses import field
 from datetime import datetime, timezone
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CallSession(BaseModel):
@@ -16,8 +15,8 @@ class CallSession(BaseModel):
     call_sid: str | None = None
     from_number: str | None = None
     to_number: str | None = None
-    transcript: list[tuple[str, str]] = field(default_factory=list)
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    transcript: list[tuple[str, str]] = Field(default_factory=list)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def transcript_text(self) -> str:
