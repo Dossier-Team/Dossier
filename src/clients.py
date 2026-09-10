@@ -21,6 +21,6 @@ GEMINI_API_KEY = _required_env('GEMINI_API_KEY')
 llm_model = init_chat_model('google_genai:gemini-3.7-flash')
 
 DEEPGRAM_API_KEY = _required_env('DEEPGRAM_API_KEY')
-dg_client = AsyncDeepgramClient(api_key=DEEPGRAM_API_KEY)
+deepgram_client = AsyncDeepgramClient(api_key=DEEPGRAM_API_KEY)
 
 PUBLIC_HOST_NAME = _required_env('PUBLIC_HOST_NAME')

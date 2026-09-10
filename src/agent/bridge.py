@@ -15,7 +15,7 @@ from fastapi import WebSocket
 
 from src.agent.session import CallSession
 from src.agent.settings import build_agent_settings
-from src.clients import dg_client
+from src.clients import deepgram_client
 from src.telephony import twilio_protocol as twilio
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ async def run_bridge(twilio_ws: WebSocket, session: CallSession) -> None:
     Returns when either side hangs up; raises whatever the losing task raised
     (`WebSocketDisconnect` on a normal caller hangup).
     """
-    async with dg_client.agent.v1.connect() as agent:
+    async with deepgram_client.agent.v1.connect() as agent:
         tasks = [
             asyncio.create_task(_twilio_to_agent(twilio_ws, agent, session)),
             asyncio.create_task(_agent_to_twilio(twilio_ws, agent, session)),
