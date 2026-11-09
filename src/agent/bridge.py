@@ -17,6 +17,7 @@ from fastapi import WebSocket
 from src.agent.session import CallSession
 from src.agent.settings import build_agent_settings
 from src.clients import TWILIO_AUTH_TOKEN, dg_client
+from src.delivery.dossier import send_call_status
 from src.telephony import twilio_protocol as twilio
 from src.telephony.security import is_valid_stream_token
 
@@ -36,6 +37,17 @@ HANGUP_MARK = "hangup"
 
 # Deepgram reports these several times a second; they'd drown out the rest of the debug log.
 _QUIET_EVENTS = {"LatencyReport", "History", "AgentThinking"}
+
+
+# The "call started" notice outlives nothing, but asyncio keeps only a weak reference to a task.
+_status_tasks: set[asyncio.Task] = set()
+
+
+def announce_call(session: CallSession, status: str) -> None:
+    """Tell getdossier.org about the call in the background, without holding up the audio."""
+    task = asyncio.create_task(send_call_status(session.call_sid, session.from_number, status))
+    _status_tasks.add(task)
+    task.add_done_callback(_status_tasks.discard)
 
 
 class StreamRejected(Exception):
@@ -70,6 +82,7 @@ async def run_bridge(twilio_ws: WebSocket, session: CallSession) -> None:
         return
     if not is_valid_stream_token(TWILIO_AUTH_TOKEN, session.call_sid, parameters.get("token")):
         raise StreamRejected(f"No valid stream token for call {session.call_sid}")
+    announce_call(session, "started")
 
     hangup = _Hangup()
     async with dg_client.agent.v1.connect() as agent:

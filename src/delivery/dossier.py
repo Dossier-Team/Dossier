@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Waits between attempts. A 4xx isn't retried: sending the same thing again won't fix it.
 RETRY_DELAYS_SECONDS = (2.0, 5.0)
 TIMEOUT_SECONDS = 20.0
+STATUS_TIMEOUT_SECONDS = 5.0
 
 
 def call_payload(session: CallSession, details: MaintenanceCall | None) -> dict[str, Any]:
@@ -58,3 +59,31 @@ async def send_to_dossier(
             if response.status_code < 500:
                 return False
     return False
+
+
+async def send_call_status(
+    call_sid: str | None,
+    from_number: str | None,
+    status: str,
+    *,
+    url: str = CALL_INTAKE_URL,
+    token: str = CALL_INTAKE_TOKEN,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> bool:
+    """Tell getdossier.org a call has started, or ended with nothing said, so the Live page can show
+    "On a call". One try and a short timeout: it only drives the page, and a miss must not hold up the call."""
+    if not call_sid:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=STATUS_TIMEOUT_SECONDS, transport=transport) as client:
+            response = await client.post(
+                f"{url.rstrip('/')}/status",
+                json={"call_sid": call_sid, "from_number": from_number, "status": status},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as error:
+        logger.warning("Couldn't tell Dossier call %s %s: %s", call_sid, status, error)
+        return False
+    if not response.is_success:
+        logger.warning("Dossier answered %s to call %s %s: %s", response.status_code, call_sid, status, response.text)
+    return response.is_success

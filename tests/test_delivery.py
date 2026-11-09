@@ -94,3 +94,22 @@ def test_still_sends_the_transcript_when_extraction_fails(monkeypatch):
     asyncio.run(service.process_finished_call(SESSION))
     assert sent[0]["details"] is None
     assert len(sent[0]["transcript"]) == 2
+
+
+def test_says_a_call_started_once_with_the_token():
+    from src.delivery.dossier import send_call_status
+
+    transport, calls = responder(200)
+    assert asyncio.run(send_call_status("CA1", "+16075550199", "started", url="https://dossier.test/call", token="tok", transport=transport))
+    assert len(calls) == 1
+    assert str(calls[0].url) == "https://dossier.test/call/status"
+    assert calls[0].headers["authorization"] == "Bearer tok"
+    assert json.loads(calls[0].content) == {"call_sid": "CA1", "from_number": "+16075550199", "status": "started"}
+
+
+def test_a_missed_call_status_is_not_retried_or_raised():
+    from src.delivery.dossier import send_call_status
+
+    transport, calls = responder("drop")
+    assert not asyncio.run(send_call_status("CA1", None, "started", url="https://dossier.test/call", token="tok", transport=transport))
+    assert len(calls) == 1

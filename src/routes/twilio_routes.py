@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Response, WebSocket, WebSocketDisconnect
 
-from src.agent.bridge import StreamRejected, run_bridge
+from src.agent.bridge import StreamRejected, announce_call, run_bridge
 from src.agent.session import CallSession
 from src.clients import PUBLIC_HOST_NAME, TWILIO_AUTH_TOKEN
 from src.extraction.service import process_finished_call
@@ -51,11 +51,13 @@ async def twiml(request: Request) -> Response:
 async def media(twilio_ws: WebSocket) -> None:
     await twilio_ws.accept()
     session = CallSession()
+    rejected = False
     try:
         await run_bridge(twilio_ws, session)
         # The agent hung up, or the stream ended. Closing ends <Connect>, and the call with it.
         await _close(twilio_ws)
     except StreamRejected as error:
+        rejected = True
         logger.warning("%s", error)
         await _close(twilio_ws, code=1008)
     except WebSocketDisconnect:
@@ -68,6 +70,9 @@ async def media(twilio_ws: WebSocket) -> None:
             task.add_done_callback(_extraction_tasks.discard)
         else:
             logger.info("Call %s ended with an empty transcript", session.call_sid)
+            # A call with a transcript is marked over when it's posted. One without needs saying.
+            if session.call_sid and not rejected:
+                announce_call(session, "ended")
 
 
 async def _close(twilio_ws: WebSocket, code: int = 1000) -> None:
