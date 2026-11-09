@@ -12,6 +12,12 @@ PARAMS = {"CallSid": "CA123", "From": "+16075550199", "To": "+16075550100", "Acc
 client = TestClient(app_module.app)
 
 
+def test_has_no_public_docs_pages():
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+    assert client.get("/").json() == {"status": "ok"}
+
+
 def test_rejects_an_unsigned_inbound_call():
     assert client.post("/twiml", data=PARAMS).status_code == 403
     bad = client.post("/twiml", data=PARAMS, headers={"X-Twilio-Signature": "nope"})
