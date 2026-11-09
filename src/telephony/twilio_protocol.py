@@ -48,6 +48,11 @@ def decode_dtmf_digit(frame: dict[str, Any]) -> str | None:
     return (frame.get("dtmf") or {}).get("digit")
 
 
+def decode_mark_name(frame: dict[str, Any]) -> str | None:
+    """The name of a `mark` Twilio echoed back once the audio queued before it had played."""
+    return (frame.get("mark") or {}).get("name")
+
+
 def media_frame(stream_sid: str, payload: bytes) -> str:
     """Outbound audio frame. `payload` must be mulaw/8000, as Twilio expects."""
     return json.dumps(

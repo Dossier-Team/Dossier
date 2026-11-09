@@ -1,27 +1,28 @@
-"""LLM extraction of structured intelligence from a finished call transcript.
+"""After a call: pull out the details and send the call to getdossier.org.
 
-Provider-agnostic on purpose: it takes transcript text, so it survived the move
-off ElevenLabs' post-call webhook unchanged.
+getdossier.org does the rest — Jev classifies the problem, it's routed to a
+team, logged, and a follow-up email is scheduled — and shows it on the Live page.
 """
 
 import logging
 
+from src.agent.prompts import COMPANY_NAME
 from src.agent.session import CallSession
 from src.clients import LLM_MODEL
-from src.schemas.extraction import CallExtraction
+from src.delivery.dossier import call_payload, send_to_dossier
+from src.schemas.extraction import MaintenanceCall
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are analyzing a transcript of a phone call between an AI agent "
-    "posing as a potential scam victim and a suspected scammer. Extract "
-    "every signal defined in the schema. Leave a field as None/[] when "
-    "the transcript doesn't support it — never fabricate."
+    f"You are reading the transcript of a call to {COMPANY_NAME}'s emergency maintenance line, "
+    "between an automated agent and a tenant. Fill in each field from what the caller said. "
+    "Leave a field empty when the transcript doesn't say it — never guess."
 )
 
 
-async def run_extraction_on_transcript(transcript_text: str) -> CallExtraction:
-    structured_llm = LLM_MODEL.with_structured_output(CallExtraction)
+async def run_extraction_on_transcript(transcript_text: str) -> MaintenanceCall:
+    structured_llm = LLM_MODEL.with_structured_output(MaintenanceCall)
 
     return await structured_llm.ainvoke(
         [
@@ -31,17 +32,15 @@ async def run_extraction_on_transcript(transcript_text: str) -> CallExtraction:
     )
 
 
-async def extract_and_store(session: CallSession) -> CallExtraction:
-    """Extract from a completed call. Fired once the media socket closes.
+async def process_finished_call(session: CallSession) -> None:
+    """Fired once the media socket closes. The transcript is sent even if extraction fails."""
+    details = None
+    try:
+        details = await run_extraction_on_transcript(session.transcript_text)
+        logger.info("Extraction for call %s: %s", session.call_sid, details.model_dump_json())
+    except Exception:
+        logger.exception("Couldn't extract details from call %s; sending the transcript alone", session.call_sid)
 
-    TODO: persistence. Today this only logs the extraction — see the migration
-    plan's open items for where these should land.
-    """
-    extraction = await run_extraction_on_transcript(session.transcript_text)
-    logger.info(
-        "Extraction for call %s from %s: %s",
-        session.call_sid,
-        session.from_number,
-        extraction.model_dump_json(),
-    )
-    return extraction
+    if not await send_to_dossier(call_payload(session, details)):
+        # The transcript exists nowhere else, so it goes in the log rather than being lost.
+        logger.error("Couldn't send call %s to Dossier. Transcript:\n%s", session.call_sid, session.transcript_text)

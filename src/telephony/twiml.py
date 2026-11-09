@@ -8,17 +8,21 @@ def build_stream_twiml(
     call_sid: str | None = None,
     from_number: str | None = None,
     to_number: str | None = None,
+    token: str | None = None,
 ) -> str:
     """TwiML that hands the call's audio to our media socket.
 
     The `<Parameter>`s are the only channel for call metadata: the media
     WebSocket carries no Twilio headers, so without them every extraction
-    lands anonymous.
+    lands anonymous. `token` lets the socket check the stream is one we started.
+
+    Closing the socket ends `<Connect>`, and the `<Hangup>` after it ends the call.
     """
     parameters = {
         "callSid": call_sid,
         "from": from_number,
         "to": to_number,
+        "token": token,
     }
     parameter_tags = "\n".join(
         f"      <Parameter name={quoteattr(name)} value={quoteattr(value)} />"
@@ -37,5 +41,6 @@ def build_stream_twiml(
         "  <Connect>\n"
         f"{stream}\n"
         "  </Connect>\n"
+        "  <Hangup />\n"
         "</Response>"
     )

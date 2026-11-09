@@ -9,12 +9,13 @@ from deepgram.agent.v1 import (
 )
 from deepgram.types import (
     ThinkSettingsV1,
+    ThinkSettingsV1FunctionsItem,
     ThinkSettingsV1Provider_Google,
     SpeakSettingsV1,
     SpeakSettingsV1Provider_Deepgram,
 )
 
-from src.agent.prompts import GREETING, PROMPT
+from src.agent.prompts import END_CALL, GREETING, PROMPT
 from src.agent.session import CallSession
 
 TWILIO_ENCODING = "mulaw"
@@ -27,6 +28,13 @@ THINK_MODEL = "gemini-2.5-flash"
 LISTEN_PROVIDER = AgentV1SettingsAgentListenProvider_V2(type="deepgram", model=STT_MODEL)
 SPEAK_PROVIDER = SpeakSettingsV1Provider_Deepgram(type="deepgram", model=TTS_MODEL)
 THINK_PROVIDER = ThinkSettingsV1Provider_Google(type="google", model=THINK_MODEL)
+
+# No endpoint, so Deepgram sends the call to us as a FunctionCallRequest and the bridge hangs up.
+END_CALL_FUNCTION = ThinkSettingsV1FunctionsItem(
+    name=END_CALL,
+    description="Hang up. Call this once you've said goodbye and the caller has nothing more to add.",
+    parameters={"type": "object", "properties": {}},
+)
 
 
 def build_agent_settings(session: CallSession) -> AgentV1Settings:
@@ -46,7 +54,7 @@ def build_agent_settings(session: CallSession) -> AgentV1Settings:
         ),
         agent=AgentV1SettingsAgent(
             listen=AgentV1SettingsAgentListen(provider=LISTEN_PROVIDER),
-            think=ThinkSettingsV1(provider=THINK_PROVIDER, prompt=PROMPT),
+            think=ThinkSettingsV1(provider=THINK_PROVIDER, prompt=PROMPT, functions=[END_CALL_FUNCTION]),
             speak=SpeakSettingsV1(provider=SPEAK_PROVIDER),
             greeting=GREETING,
         ),

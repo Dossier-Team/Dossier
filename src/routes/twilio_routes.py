@@ -1,12 +1,14 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Response, WebSocket, WebSocketDisconnect
 
-from src.agent.bridge import run_bridge
+from src.agent.bridge import StreamRejected, run_bridge
 from src.agent.session import CallSession
-from src.clients import PUBLIC_HOST_NAME
-from src.extraction.service import extract_and_store
+from src.clients import PUBLIC_HOST_NAME, TWILIO_AUTH_TOKEN
+from src.extraction.service import process_finished_call
+from src.telephony.security import is_from_twilio, stream_token
 from src.telephony.twiml import build_stream_twiml
 
 logger = logging.getLogger(__name__)
@@ -18,14 +20,29 @@ router = APIRouter()
 _extraction_tasks: set[asyncio.Task] = set()
 
 
+def _public_url(request: Request) -> str:
+    """The URL Twilio called and signed. Behind the proxy the app sees http://localhost instead."""
+    query = f"?{request.url.query}" if request.url.query else ""
+    return f"https://{PUBLIC_HOST_NAME}{request.url.path}{query}"
+
+
 @router.post("/twiml")
 async def twiml(request: Request) -> Response:
     form = await request.form()
+    params = {name: str(value) for name, value in form.items()}
+    if not is_from_twilio(TWILIO_AUTH_TOKEN, _public_url(request), params, request.headers.get("x-twilio-signature")):
+        logger.warning("Rejected an inbound-call webhook with a bad signature")
+        return Response(status_code=403)
+
+    call_sid = params.get("CallSid")
+    if not call_sid:
+        return Response(status_code=400)
     xml = build_stream_twiml(
         host=PUBLIC_HOST_NAME,
-        call_sid=form.get("CallSid"),
-        from_number=form.get("From"),
-        to_number=form.get("To"),
+        call_sid=call_sid,
+        from_number=params.get("From"),
+        to_number=params.get("To"),
+        token=stream_token(TWILIO_AUTH_TOKEN, call_sid),
     )
     return Response(content=xml, media_type="application/xml")
 
@@ -36,12 +53,25 @@ async def media(twilio_ws: WebSocket) -> None:
     session = CallSession()
     try:
         await run_bridge(twilio_ws, session)
+        # The agent hung up, or the stream ended. Closing ends <Connect>, and the call with it.
+        await _close(twilio_ws)
+    except StreamRejected as error:
+        logger.warning("%s", error)
+        await _close(twilio_ws, code=1008)
     except WebSocketDisconnect:
         pass
     finally:
+        session.ended_at = datetime.now(timezone.utc)
         if session.transcript:
-            task = asyncio.create_task(extract_and_store(session))
+            task = asyncio.create_task(process_finished_call(session))
             _extraction_tasks.add(task)
             task.add_done_callback(_extraction_tasks.discard)
         else:
             logger.info("Call %s ended with an empty transcript", session.call_sid)
+
+
+async def _close(twilio_ws: WebSocket, code: int = 1000) -> None:
+    try:
+        await twilio_ws.close(code=code)
+    except RuntimeError:
+        pass  # Twilio already closed it.
