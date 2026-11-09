@@ -10,7 +10,7 @@ class MaintenanceCall(BaseModel):
     caller_name: str | None = Field(default=None, description="The caller's name.")
     address: str | None = Field(
         default=None,
-        description="Street address and unit number, as the caller gave them.",
+        description="Street address and unit number, with numbers as digits (e.g. '118 Catherine Street, unit 2B').",
     )
     callback_number: str | None = Field(
         default=None,

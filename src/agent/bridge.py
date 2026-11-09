@@ -11,11 +11,9 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from deepgram.agent.v1 import AgentV1SendFunctionCallResponse
 from deepgram.agent.v1.socket_client import AsyncV1SocketClient
 from fastapi import WebSocket
 
-from src.agent.prompts import END_CALL
 from src.agent.session import CallSession
 from src.agent.settings import build_agent_settings
 from src.clients import TWILIO_AUTH_TOKEN, dg_client
@@ -27,11 +25,17 @@ logger = logging.getLogger(__name__)
 # Deepgram closes an idle agent socket, so it gets a keepalive through long silences.
 KEEPALIVE_SECONDS = 5.0
 
-# The goodbye's audio can start arriving just after the end_call request, so wait this long for it.
-HANGUP_GRACE_SECONDS = 1.5
-# If Twilio never confirms the goodbye has played, hang up anyway.
-HANGUP_TIMEOUT_SECONDS = 20.0
+# Deepgram sends speech faster than it plays, so a pause this long means the goodbye is all sent.
+AUDIO_QUIET_SECONDS = 1.0
+# If no audio follows the goodbye's text within this long, assume the audio came first.
+CLOSING_AUDIO_WAIT_SECONDS = 3.0
+# Hang up regardless this long after the goodbye.
+HANGUP_TIMEOUT_SECONDS = 25.0
+HANGUP_POLL_SECONDS = 0.2
 HANGUP_MARK = "hangup"
+
+# Deepgram reports these several times a second; they'd drown out the rest of the debug log.
+_QUIET_EVENTS = {"LatencyReport", "History", "AgentThinking"}
 
 
 class StreamRejected(Exception):
@@ -40,10 +44,16 @@ class StreamRejected(Exception):
 
 @dataclass
 class _Hangup:
-    """Hanging up once the goodbye has finished playing, not while it's still being said."""
+    """Hanging up once the agent's goodbye has finished playing, not while it's still being said.
 
-    requested: bool = False
-    agent_speaking: bool = False
+    Each hangup mark is named after how many audio chunks had been sent when it
+    was sent. Twilio echoes a mark once the audio before it has played, so an
+    echo means "hang up now" only if no audio was sent after that mark.
+    """
+
+    goodbye_at: float | None = None
+    audio_chunks: int = 0
+    last_audio_at: float = 0.0
     done: asyncio.Event = field(default_factory=asyncio.Event)
     timer: asyncio.Task | None = None
 
@@ -51,7 +61,7 @@ class _Hangup:
 async def run_bridge(twilio_ws: WebSocket, session: CallSession) -> None:
     """Run the call to completion, filling in `session` as it goes.
 
-    Returns when either side hangs up or the agent ends the call; raises
+    Returns when either side hangs up or the agent says goodbye; raises
     `StreamRejected` for a stream we didn't start, and whatever the losing task
     raised (`WebSocketDisconnect` on a normal caller hangup).
     """
@@ -118,8 +128,8 @@ async def _twilio_to_agent(
         if event == twilio.MEDIA:
             await agent.send_media(twilio.decode_media_payload(frame))
         elif event == twilio.MARK:
-            # Twilio echoes a mark once everything queued before it has played.
-            if twilio.decode_mark_name(frame) == HANGUP_MARK and hangup.requested and not hangup.agent_speaking:
+            if twilio.decode_mark_name(frame) == f"{HANGUP_MARK}-{hangup.audio_chunks}":
+                logger.debug("The goodbye has played; hanging up")
                 return
         elif event == twilio.DTMF:
             logger.info("DTMF digit %s", twilio.decode_dtmf_digit(frame))
@@ -138,32 +148,40 @@ async def _agent_to_twilio(
     hangup: _Hangup,
 ) -> None:
     """Agent audio and transcript: Deepgram -> Twilio."""
+    loop = asyncio.get_running_loop()
+    audio_bytes = 0
     async for message in agent:
         if isinstance(message, bytes):
             if session.stream_sid is None:
                 continue
             for chunk in twilio.chunk_audio(message):
                 await twilio_ws.send_text(twilio.media_frame(session.stream_sid, chunk))
+            hangup.audio_chunks += 1
+            hangup.last_audio_at = loop.time()
+            audio_bytes += len(message)
             continue
 
         message_type = getattr(message, "type", None)
+        if message_type not in _QUIET_EVENTS:
+            if audio_bytes:
+                logger.debug("Deepgram sent %.1f s of audio", audio_bytes / 8000)
+                audio_bytes = 0
+            logger.debug("Deepgram %s %s", message_type, getattr(message, "content", "") or "")
+
         if message_type == "ConversationText":
             session.transcript.append((message.role, message.content))
+            if message.role == "assistant" and "goodbye" in message.content.lower() and hangup.goodbye_at is None:
+                logger.info("Agent said goodbye on call %s", session.call_sid)
+                hangup.goodbye_at = loop.time()
+                hangup.timer = asyncio.create_task(_hang_up_after_goodbye(twilio_ws, session, hangup))
         elif message_type == "UserStartedSpeaking":
             # Twilio buffers everything we send it, so barge-in only works if
             # we drop that buffer the moment the caller starts talking.
             if session.stream_sid is not None:
                 await twilio_ws.send_text(twilio.clear_frame(session.stream_sid))
-        elif message_type == "AgentStartedSpeaking":
-            hangup.agent_speaking = True
         elif message_type == "AgentAudioDone":
-            hangup.agent_speaking = False
             if session.stream_sid is not None:
-                name = HANGUP_MARK if hangup.requested else "agent-audio-done"
-                await twilio_ws.send_text(twilio.mark_frame(session.stream_sid, name))
-        elif message_type == "FunctionCallRequest":
-            for function in message.functions:
-                await _answer_function_call(twilio_ws, agent, session, hangup, function)
+                await twilio_ws.send_text(twilio.mark_frame(session.stream_sid, "agent-audio-done"))
         elif message_type == "Error":
             logger.error("Deepgram agent error %s: %s", message.code, message.description)
             break
@@ -171,29 +189,22 @@ async def _agent_to_twilio(
             logger.warning("Deepgram agent warning: %s", getattr(message, "description", message))
 
 
-async def _answer_function_call(twilio_ws, agent, session: CallSession, hangup: _Hangup, function) -> None:
-    if function.name == END_CALL:
-        content = "Hanging up now."
-        if not hangup.requested:
-            logger.info("Agent ended call %s", session.call_sid)
-            hangup.requested = True
-            hangup.timer = asyncio.create_task(_hang_up_after_goodbye(twilio_ws, session, hangup))
-    else:
-        logger.warning("Agent called unknown function %r", function.name)
-        content = f"There's no function called {function.name}."
-    if function.client_side:
-        await agent.send_function_call_response(
-            AgentV1SendFunctionCallResponse(id=function.id, name=function.name, content=content)
-        )
-
-
 async def _hang_up_after_goodbye(twilio_ws: WebSocket, session: CallSession, hangup: _Hangup) -> None:
-    """If the goodbye was already sent, ask Twilio to say when it has played. Otherwise
-    `AgentAudioDone` sends that mark once the goodbye's audio is done."""
-    await asyncio.sleep(HANGUP_GRACE_SECONDS)
-    if not hangup.agent_speaking and session.stream_sid is not None:
-        await twilio_ws.send_text(twilio.mark_frame(session.stream_sid, HANGUP_MARK))
-    await asyncio.sleep(HANGUP_TIMEOUT_SECONDS)
+    """Once the goodbye's audio has all been sent, ask Twilio to say when it has played.
+
+    A new mark goes out whenever more audio has been sent since the last one, so a
+    mark that turned stale (audio sent after it) is replaced rather than trusted.
+    """
+    loop = asyncio.get_running_loop()
+    marked_at = None
+    while loop.time() - hangup.goodbye_at < HANGUP_TIMEOUT_SECONDS:
+        await asyncio.sleep(HANGUP_POLL_SECONDS)
+        now = loop.time()
+        goodbye_audio_sent = hangup.last_audio_at > hangup.goodbye_at or now - hangup.goodbye_at >= CLOSING_AUDIO_WAIT_SECONDS
+        quiet = now - hangup.last_audio_at >= AUDIO_QUIET_SECONDS
+        if goodbye_audio_sent and quiet and marked_at != hangup.audio_chunks and session.stream_sid is not None:
+            marked_at = hangup.audio_chunks
+            await twilio_ws.send_text(twilio.mark_frame(session.stream_sid, f"{HANGUP_MARK}-{marked_at}"))
     logger.warning("Twilio never confirmed the goodbye played on call %s; hanging up", session.call_sid)
     hangup.done.set()
 

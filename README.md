@@ -8,7 +8,7 @@ This is the `lambrou-emergency-line` branch. `main` is the scam-call version.
 
 - **Greeting:** "Thanks for calling Lambrou Real Estate's emergency maintenance line. I'm an automated assistant, and this call is transcribed. How can I help you?"
 - **Script** (`src/agent/prompts.py`): what's wrong, the address and unit, the caller's name, whether the number they called from is the best one, and an optional email that the agent reads back to confirm. A gas smell, smoke, fire, a CO alarm, sparks or an injury gets "get everyone out and call 911" first. The agent never promises a time or a cost.
-- **Hanging up:** the agent says goodbye, then calls an `end_call` function. The bridge waits until Twilio confirms the goodbye has played, then closes the stream, and the `<Hangup />` after `<Connect>` ends the call.
+- **Hanging up:** every call ends with the same words: "Our on-call team has your request and will call you back. If anyone is in danger, call 911. Goodbye." When the agent says "Goodbye", the bridge waits until Twilio confirms that audio has played, then closes the stream, and the `<Hangup />` after `<Connect>` ends the call. A confirmation only counts if no audio was sent after it, so the goodbye can't be cut off.
 - **After the call** (`src/extraction/service.py`): Gemini 3.7 Flash fills in `MaintenanceCall` (name, address, callback number, problem, email, whether the email was confirmed). The call is posted to `CALL_INTAKE_URL` with `CALL_INTAKE_TOKEN` as a Bearer token, with two retries. If extraction fails, the transcript is sent without details. If sending fails, the transcript is written to the log so it isn't lost.
 - **Models:** Deepgram Flux listens, Gemini 2.5 Flash (through Deepgram) writes the replies, and Deepgram Aura-2 Thalia speaks (`src/agent/settings.py`).
 
@@ -81,10 +81,10 @@ The tests use a fake Twilio socket and a fake Deepgram agent. They cover:
 
 - Signatures, checked against Twilio's own test vector.
 - Rejecting a stream with a forged token.
-- Hanging up only after the goodbye has played, including when Twilio never confirms it.
-- A caller hanging up.
+- Hanging up only after the goodbye has played, including when more audio follows a confirmation and when Twilio never confirms.
+- Not hanging up when the caller says goodbye.
 - Sending to getdossier.org with retries, and sending the transcript when extraction fails.
 
-The Docker image builds and answers `/twiml` like Twilio expects. A finished call was posted to the live getdossier.org endpoint and logged.
+The Docker image builds and answers `/twiml` like Twilio expects.
 
-Two things haven't been tested yet, because they need real keys: a real call through Deepgram, and Gemini extraction.
+Full calls also went through the real Deepgram agent with a synthesized caller, sent the way Twilio sends audio: a water leak, and a gas smell. Both reached getdossier.org with the right details. The leak was routed to Southern Tier with a follow-up, and the gas call went to Needs review. A call over a real phone line through Twilio hasn't been tested yet.
